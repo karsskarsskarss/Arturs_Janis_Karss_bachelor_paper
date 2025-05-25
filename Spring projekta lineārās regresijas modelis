@@ -1,0 +1,41 @@
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+
+# === 1. Ielādē visus nepieciešamos datus
+issue_0 = pd.read_csv("spring_issue_0 (1).csv", encoding="utf-8")
+issue_30 = pd.read_csv("spring_issue_30.csv", encoding="utf-8")
+issue_50 = pd.read_csv("spring_issue_50.csv", encoding="utf-8")
+
+iteration_0 = pd.read_csv("spring_iteration_0 (1).csv", encoding="utf-8", on_bad_lines="skip")
+iteration_30 = pd.read_csv("spring_iteration_30.csv", encoding="utf-8", on_bad_lines="skip")
+iteration_50 = pd.read_csv("spring_iteration_50.csv", encoding="utf-8", on_bad_lines="skip")
+iteration_80 = pd.read_csv("spring_iteration_80.csv", encoding="utf-8")
+
+# === 2. Funkcija treniņam un prognozēšanai
+def train_and_predict(issue_df, iteration_df, target_df, iter_label):
+    merged = pd.merge(issue_df, iteration_df, on=["boardid", "sprintid"])
+    X = merged.drop(columns=["boardid", "sprintid", "name", "vel_diff"])
+    y = merged["vel_diff"]
+
+    X = pd.get_dummies(X, drop_first=True).fillna(0)
+
+    model = LinearRegression().fit(X, y)
+    merged["vel_diff_pred"] = model.predict(X)
+
+    actual = target_df.groupby("sprintid").mean(numeric_only=True).reset_index()[["sprintid", "vel_diff"]]
+    predicted = merged.groupby("sprintid").mean(numeric_only=True).reset_index()[["sprintid", "vel_diff_pred"]]
+    comparison = pd.merge(predicted, actual, on="sprintid")
+    comparison["difference"] = comparison["vel_diff"] - comparison["vel_diff_pred"]
+
+    mse = mean_squared_error(comparison["vel_diff"], comparison["vel_diff_pred"])
+    r2 = r2_score(comparison["vel_diff"], comparison["vel_diff_pred"])
+
+    print(f"\n📊 Spring {iter_label} | MSE: {mse:.2f}, R²: {r2:.3f}")
+    print(comparison.sample(10, random_state=42))
+    return comparison, mse, r2
+
+# === 3. Treniņš un novērtējums katrai iterācijai
+comp1, mse1, r2_1 = train_and_predict(issue_0, iteration_0, iteration_30, "1 → 2")
+comp2, mse2, r2_2 = train_and_predict(pd.concat([issue_0, issue_30]), pd.concat([iteration_0, iteration_30]), iteration_50, "2 → 3")
+comp3, mse3, r2_3 = train_and_predict(pd.concat([issue_0, issue_30, issue_50]), pd.concat([iteration_0, iteration_30, iteration_50]), iteration_80, "3 → 4")
