@@ -1,0 +1,58 @@
+import pandas as pd
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, r2_score
+
+# === 1. Datu ielāde ===
+issue_0 = pd.read_csv("spring_issue_0 (1).csv", encoding="utf-8")
+issue_30 = pd.read_csv("spring_issue_30.csv", encoding="utf-8")
+issue_50 = pd.read_csv("spring_issue_50.csv", encoding="utf-8")
+
+iter_0 = pd.read_csv("spring_iteration_0 (1).csv", encoding="utf-8", on_bad_lines="skip")
+iter_30 = pd.read_csv("spring_iteration_30.csv", encoding="utf-8", on_bad_lines="skip")
+iter_50 = pd.read_csv("spring_iteration_50.csv", encoding="utf-8", on_bad_lines="skip")
+iter_80 = pd.read_csv("spring_iteration_80.csv", encoding="utf-8")
+
+# === Funkcija modelim ===
+def train_and_evaluate(issue_df, iter_df, target_iter_df):
+    merged = pd.merge(issue_df, iter_df, on=["boardid", "sprintid"])
+    X = merged.drop(columns=["boardid", "sprintid", "name", "vel_diff"])
+    y = merged["vel_diff"]
+    
+    X = pd.get_dummies(X, drop_first=True)
+    X = X.fillna(0)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    model = MLPRegressor(hidden_layer_sizes=(100,), max_iter=300, random_state=42, verbose=True)
+    model.fit(X_scaled, y)
+    merged["vel_diff_pred"] = model.predict(X_scaled)
+
+    actual = target_iter_df.groupby("sprintid").mean(numeric_only=True).reset_index()[["sprintid", "vel_diff"]]
+    predicted = merged.groupby("sprintid").mean(numeric_only=True).reset_index()[["sprintid", "vel_diff_pred"]]
+    comparison = pd.merge(predicted, actual, on="sprintid")
+    comparison["difference"] = comparison["vel_diff"] - comparison["vel_diff_pred"]
+
+    mse = mean_squared_error(comparison["vel_diff"], comparison["vel_diff_pred"])
+    r2 = r2_score(comparison["vel_diff"], comparison["vel_diff_pred"])
+    
+    return round(mse, 2), round(r2, 3), comparison
+
+# === 1 → 2 iterācija ===
+mse_1_2, r2_1_2, cmp_1_2 = train_and_evaluate(issue_0, iter_0, iter_30)
+
+# === 2 → 3 iterācija ===
+issues_1_2 = pd.concat([issue_0, issue_30])
+iters_1_2 = pd.concat([iter_0, iter_30])
+mse_2_3, r2_2_3, cmp_2_3 = train_and_evaluate(issues_1_2, iters_1_2, iter_50)
+
+# === 3 → 4 iterācija ===
+issues_1_3 = pd.concat([issue_0, issue_30, issue_50])
+iters_1_3 = pd.concat([iter_0, iter_30, iter_50])
+mse_3_4, r2_3_4, cmp_3_4 = train_and_evaluate(issues_1_3, iters_1_3, iter_80)
+
+# === Rezultāti ===
+print("📊 MLPRegressor rezultāti SPRING projektam:")
+print(f"1 → 2 iterācija:  MSE = {mse_1_2},  R² = {r2_1_2}")
+print(f"2 → 3 iterācija:  MSE = {mse_2_3},  R² = {r2_2_3}")
+print(f"3 → 4 iterācija:  MSE = {mse_3_4},  R² = {r2_3_4}")
