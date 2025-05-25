@@ -1,0 +1,53 @@
+import pandas as pd
+from sklearn.svm import SVR
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+
+# === Ielādē datus ===
+issue_0 = pd.read_csv("apache_issue_0.csv")
+issue_30 = pd.read_csv("apache_issue_30.csv")
+issue_50 = pd.read_csv("apache_issue_50.csv")
+
+iteration_0 = pd.read_csv("apache_iteration_0.csv")
+iteration_30 = pd.read_csv("apache_iteration_30.csv")
+iteration_50 = pd.read_csv("apache_iteration_50.csv")
+iteration_80 = pd.read_csv("apache_iteration_80.csv")
+
+def train_and_predict(issue_df, iteration_df, target_iteration_df):
+    # Apvieno datus un apmāca modeli
+    merged = pd.merge(issue_df, iteration_df, on=["boardid", "sprintid"])
+    encoded = pd.get_dummies(merged, columns=["type", "priority", "gunning_fog"])
+    
+    # Sadalām ievades un izejas
+    X = encoded.drop(columns=["boardid", "sprintid", "name", "vel_diff"])
+    y = encoded["vel_diff"]
+
+    # SVR prasa datu normalizāciju
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # === SVR modelis ===
+    model = SVR(kernel="rbf", C=100, gamma=0.1, epsilon=0.1)
+    model.fit(X_scaled, y)
+    encoded["vel_diff_pred"] = model.predict(X_scaled)
+
+    # Salīdzina ar nākamo iterāciju
+    actual = target_iteration_df.groupby("sprintid").mean(numeric_only=True).reset_index()[["sprintid", "vel_diff"]]
+    predicted = encoded.groupby("sprintid").mean(numeric_only=True).reset_index()[["sprintid", "vel_diff_pred"]]
+    comparison = pd.merge(predicted, actual, on="sprintid")
+
+    mse = mean_squared_error(comparison["vel_diff"], comparison["vel_diff_pred"])
+    r2 = r2_score(comparison["vel_diff"], comparison["vel_diff_pred"])
+
+    return round(mse, 2), round(r2, 3)
+
+# === Pārbauda visām iterācijām ===
+mse_1_2, r2_1_2 = train_and_predict(issue_0, iteration_0, iteration_30)
+mse_2_3, r2_2_3 = train_and_predict(pd.concat([issue_0, issue_30]), pd.concat([iteration_0, iteration_30]), iteration_50)
+mse_3_4, r2_3_4 = train_and_predict(pd.concat([issue_0, issue_30, issue_50]), pd.concat([iteration_0, iteration_30, iteration_50]), iteration_80)
+
+# === Izdrukā rezultātus ===
+print("📊 Modelēšanas rezultāti ar SVR:")
+print(f"1 → 2 iterācija:  MSE = {mse_1_2},  R² = {r2_1_2}")
+print(f"2 → 3 iterācija:  MSE = {mse_2_3},  R² = {r2_2_3}")
+print(f"3 → 4 iterācija:  MSE = {mse_3_4},  R² = {r2_3_4}")
